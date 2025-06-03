@@ -368,6 +368,95 @@ private:
         }
         saveMenu(); // Save menu changes to file
     }
+     void deleteOrderById() {
+        int id;
+        cout << "Enter Order ID to delete: ";
+        cin >> id;
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        
+        OrderNode* current = ordersHead;
+        while (current) {
+            if (current->order.id == id) {
+                current->order.item = "[DELETED]";
+                current->order.quantity = 0;
+                current->order.total = 0.0;
+                saveToFile(); // Save deletion immediately
+                cout << "Order " << id << " marked as deleted.\n";
+                return;
+            }
+            current = current->next;
+        }
+        cout << "Order ID not found.\n";
+    }
+
+    void searchOrder() const {
+        int id;
+        cout << "Enter Order ID to search: ";
+        cin >> id;
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        
+        OrderNode* current = ordersHead;
+        while (current) {
+            if (current->order.id == id) {
+                const Order& o = current->order;
+                cout << "Found Order: " << o.customer << " ordered "
+                     << o.item << " x" << o.quantity << " at "
+                     << o.timestamp << ". Total: " << fixed << setprecision(2)
+                     << o.total << " birr.\n";
+                return;
+            }
+            current = current->next;
+        }
+        cout << "Order ID not found.\n";
+    }
+
+    void sortOrders() {
+        ordersHead = mergeSort(ordersHead, compareByTime);
+        cout << "Orders sorted by time.\n";
+        listOrders();
+        saveToFile(); // Save sorted orders immediately
+    }
+
+    void generateDailyReport() const {
+        string today = currentTime().substr(0, 10);
+        double totalRevenue = 0.0;
+        int totalOrders = 0;
+        map<string, int> itemQuantities;
+        map<string, double> itemRevenues;
+
+        OrderNode* current = ordersHead;
+        while (current) {
+            const Order& o = current->order;
+            if (o.timestamp.substr(0, 10) == today && o.item != "[DELETED]") {
+                totalOrders++;
+                totalRevenue += o.total;
+                itemQuantities[o.item] += o.quantity;
+                itemRevenues[o.item] += o.total;
+            }
+            current = current->next;
+        }
+
+        cout << "\n====== Daily Sales Report ======\n";
+        cout << "Date: " << today << "\n";
+        cout << "Total Orders: " << totalOrders << "\n";
+        cout << "Total Revenue: " << fixed << setprecision(2) << totalRevenue << " birr\n\n";
+        
+        if (!itemQuantities.empty()) {
+            cout << "Item-wise Sales:\n";
+            cout << left << setw(20) << "Item" << setw(10) << "Quantity" 
+                 << setw(15) << "Revenue (birr)" << endl;
+            cout << string(45, '-') << endl;
+            
+            for (const auto& item : itemQuantities) {
+                cout << left << setw(20) << item.first 
+                     << setw(10) << item.second 
+                     << setw(15) << fixed << setprecision(2) << itemRevenues[item.first] << endl;
+            }
+        } else {
+            cout << "No sales today.\n";
+        }
+        cout << "===============================\n";
+    }
    void submitFeedback() {
         int orderId;
         cout << "Enter your Order ID: ";
