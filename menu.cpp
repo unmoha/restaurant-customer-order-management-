@@ -368,6 +368,102 @@ private:
         }
         saveMenu(); // Save menu changes to file
     }
+   void submitFeedback() {
+        int orderId;
+        cout << "Enter your Order ID: ";
+        cin >> orderId;
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+        bool orderExists = false;
+        OrderNode* current = ordersHead;
+        while (current) {
+            if (current->order.id == orderId && current->order.item != "[DELETED]") {
+                orderExists = true
+                break;
+            }
+            current = current->next;
+        }
+
+        if (!orderExists) {
+            cout << "Order ID not found or invalid.\n";
+            return;
+        }
+
+        string message;
+        cout << "Enter your feedback: ";
+        getline(cin, message);
+
+        if (message.empty()) {
+            cout << "Feedback cannot be empty.\n";
+            return;
+        }
+
+        Feedback fb;
+        fb.orderId = orderId;
+        fb.message = message;
+        fb.timestamp = currentTime();
+
+        // Add to feedbacks linked list
+        FeedbackNode* newNode = new FeedbackNode{fb, nullptr};
+        if (!feedbacksHead) {
+            feedbacksHead = newNode;
+        } else {
+            FeedbackNode* currentFB = feedbacksHead;
+            while (currentFB->next) {
+                currentFB = currentFB->next;
+            }
+            currentFB->next = newNode;
+        }
+        
+        saveFeedback(fb); // Save feedback to file
+        cout << "Thank you for your feedback!\n";
+    }
+
+    void viewFeedbacks() const {
+        if (!feedbacksHead) {
+            cout << "No feedback available.\n";
+            return;
+        }
+
+        cout << "\n====== Customer Feedbacks ======\n";
+        cout << left << setw(10) << "Order ID" << setw(20) << "Time" << "Feedback" << endl;
+        cout << string(70, '-') << endl;
+        
+        FeedbackNode* current = feedbacksHead;
+        while (current) {
+            const Feedback& fb = current->feedback;
+            cout << left << setw(10) << fb.orderId 
+                 << setw(20) << fb.timestamp 
+                 << fb.message << endl;
+            current = current->next;
+        }
+        cout << "===============================\n";
+    }
+
+    void displayFamousFood() const {
+        if (!ordersHead) {
+            cout << "** Most Popular Food: (No orders yet) **\n";
+            return;
+        }
+        map<string, int> itemCount;
+        OrderNode* current = ordersHead;
+        while (current) {
+            if (current->order.item != "[DELETED]") {
+                itemCount[current->order.item] += current->order.quantity;
+            }
+            current = current->next;
+        }
+        if (itemCount.empty()) {
+            cout << "** Most Popular Food: (No valid orders) **\n";
+            return;
+        }
+        auto best = max_element(itemCount.begin(), itemCount.end(),
+                [](const pair<string, int>& a, const pair<string, int>& b) {
+                    return a.second < b.second;
+                });
+        cout << "** Most Popular Food: " << best->first << " (Ordered " << best->second << " times) **\n";
+    }
+}; 
 
 void showMainMenu() {
     cout << "\n===== Selam Ethiopian Restaurant =====\n";
