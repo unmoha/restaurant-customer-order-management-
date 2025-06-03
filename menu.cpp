@@ -54,6 +54,7 @@ private:
         strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", lt);
         return string(buf);
     }
+
  void loadPassword() {
         ifstream fin(passwordFile);
         if (fin) {
@@ -232,6 +233,8 @@ private:
     static bool compareByTime(const Order& a, const Order& b) {
         return a.timestamp < b.timestamp;
     }
+=======
+
 
 void showMainMenu() {
     cout << "\n===== Selam Ethiopian Restaurant =====\n";
