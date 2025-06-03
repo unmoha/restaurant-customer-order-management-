@@ -54,6 +54,185 @@ private:
         strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", lt);
         return string(buf);
     }
+    
+    void loadPassword() {
+        ifstream fin(passwordFile);
+        if (fin) {
+            getline(fin, cashierPassword);
+        } else {
+            cashierPassword = "123"; // default password
+            savePassword();
+        }
+    }
+
+    void savePassword() const {
+        ofstream fout(passwordFile);
+        fout << cashierPassword;
+    }
+
+    void loadMenu() {  // New function to load menu
+        ifstream min(menuFile);
+        if (min) {
+            string line;
+            while (getline(min, line)) {
+                if (line.empty()) continue;
+                stringstream ss(line);
+                string idStr, name, priceStr;
+                getline(ss, idStr, ',');
+                getline(ss, name, ',');
+                getline(ss, priceStr);
+                int id = stoi(idStr);
+                double price = stod(priceStr);
+                menu[id] = {name, price};
+            }
+        } else {
+            // Default menu if file doesn't exist
+            menu[1] = {"TIBS", 500.0};
+            menu[2] = {"KITFO", 600.0};
+            menu[3] = {"DORO WOTIE", 1050.0};
+            menu[4] = {"KUANTA FERFER", 650.0};
+            menu[5] = {"ALCHA KEKLE", 530.0};
+            saveMenu();  // Save default menu
+        }
+    }
+
+    void saveMenu() const {  // New function to save menu
+        ofstream mout(menuFile);
+        for (const auto& item : menu) {
+            mout << item.first << ',' << item.second.first << ',' 
+                 << fixed << setprecision(2) << item.second.second << '\n';
+        }
+    }
+
+    void loadFromFile() {
+        ifstream fin(fileName);
+        if (!fin) return;
+        string line;
+        getline(fin, line); // Skip header
+        int maxId = 1000;
+        OrderNode* last = nullptr;
+        
+        while (getline(fin, line)) {
+            if (line.empty()) continue;
+            stringstream ss(line);
+            Order o;
+            getline(ss, line, ','); o.id = stoi(line);
+            getline(ss, o.customer, ',');
+            getline(ss, o.item, ',');
+            getline(ss, line, ','); o.quantity = stoi(line);
+            getline(ss, line, ','); o.total = stod(line);
+            getline(ss, o.timestamp);
+            
+            OrderNode* newNode = new OrderNode{o, nullptr};
+            if (!ordersHead) {
+                ordersHead = newNode;
+                last = newNode;
+            } else {
+                last->next = newNode;
+                last = newNode;
+            }
+            maxId = max(maxId, o.id);
+        }
+        nextId = maxId + 1;
+    }
+
+    void saveToFile() const {
+        ofstream fout(fileName);
+        fout << "ID,Customer,Item,Quantity,Total,Time\n";
+        OrderNode* current = ordersHead;
+        while (current) {
+            const Order& o = current->order;
+            fout << o.id << "," << o.customer << "," << o.item << ","
+                 << o.quantity << "," << fixed << setprecision(2) << o.total
+                 << "," << o.timestamp << "\n";
+            current = current->next;
+        }
+    }
+
+    bool isValidName(const string& name) const {
+        for (char c : name) {
+            if (!isalpha(c) && c != ' ') return false;
+        }
+        return !name.empty();
+    }
+
+    bool isValidQuantity(const string& input) const {
+        for (char c : input) {
+            if (!isdigit(c)) return false;
+        }
+        return !input.empty();
+    }
+
+    void loadFeedbacks() {
+        ifstream fin(feedbackFileName);
+        if (!fin) return;
+        string line;
+        FeedbackNode* last = nullptr;
+        
+        while (getline(fin, line)) {
+            if (line.empty()) continue;
+            stringstream ss(line);
+            Feedback fb;
+            getline(ss, line, ';'); fb.orderId = stoi(line);
+            getline(ss, fb.timestamp, ';');
+            getline(ss, fb.message);
+            
+            FeedbackNode* newNode = new FeedbackNode{fb, nullptr};
+            if (!feedbacksHead) {
+                feedbacksHead = newNode;
+                last = newNode;
+            } else {
+                last->next = newNode;
+                last = newNode;
+            }
+        }
+    }
+
+    void saveFeedback(const Feedback& fb) const {
+        ofstream fout(feedbackFileName, ios::app);
+        fout << fb.orderId << ';' << fb.timestamp << ';' << fb.message << '\n';
+    }
+
+    // Merge Sort for linked list
+    OrderNode* mergeSort(OrderNode* head, bool (*cmp)(const Order&, const Order&)) {
+        if (!head || !head->next) return head;
+        
+        // Split list
+        OrderNode* slow = head;
+        OrderNode* fast = head->next;
+        while (fast && fast->next) {
+            slow = slow->next;
+            fast = fast->next->next;
+        }
+        OrderNode* mid = slow->next;
+        slow->next = nullptr;
+        
+        // Recursively sort
+        OrderNode* left = mergeSort(head, cmp);
+        OrderNode* right = mergeSort(mid, cmp);
+        
+        // Merge sorted lists
+        OrderNode dummy;
+        OrderNode* tail = &dummy;
+        
+        while (left && right) {
+            if (cmp(left->order, right->order)) {
+                tail->next = left;
+                left = left->next;
+            } else {
+                tail->next = right;
+                right = right->next;
+            }
+            tail = tail->next;
+        }
+        
+        tail->next = (left) ? left : right;
+        return dummy.next;
+    }
+
+    static bool compareByTime(const Order& a, const Order& b) {
+        return a.timestamp < b.timestamp;
+    }
 
 void showMainMenu() {
     cout << "\n===== Selam Ethiopian Restaurant =====\n";
