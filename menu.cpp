@@ -368,6 +368,128 @@ private:
         }
         saveMenu(); // Save menu changes to file
     }
+     void createOrder() {
+        displayMenu();
+        cout << "0. Cancel" << endl;
+        int choice;
+        cout << "Enter menu number: ";
+        cin >> choice;
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        if (choice == 0) return;
+        if (!menu.count(choice)) {
+            cout << "Invalid selection.\n";
+            return;
+        }
+
+        Order o;
+        o.id = nextId++;
+        while (true) {
+            cout << "Enter customer name: ";
+            getline(cin, o.customer);
+            if (isValidName(o.customer)) break;
+            cout << "Invalid name. Use letters and spaces only.\n";
+        }
+
+        string qty;
+        while (true) {
+            cout << "Enter quantity: ";
+            getline(cin, qty);
+            if (isValidQuantity(qty)) {
+                o.quantity = stoi(qty);
+                break;
+            }
+            cout << "Invalid quantity. Use digits only.\n";
+        }
+
+        o.total = menu.at(choice).second * o.quantity;
+        o.item = menu.at(choice).first;
+        o.timestamp = currentTime();
+
+        // Add to linked list
+        OrderNode* newNode = new OrderNode{o, nullptr};
+        if (!ordersHead) {
+            ordersHead = newNode;
+        } else {
+            OrderNode* current = ordersHead;
+            while (current->next) {
+                current = current->next;
+            }
+            current->next = newNode;
+        }
+        
+        saveToFile(); // Save new order immediately
+        cout << "Order ID " << o.id << " created at " << o.timestamp << ". Total: "
+             << fixed << setprecision(2) << o.total << " birr.\n";
+    }
+
+    void listOrders() const {
+        if (!ordersHead) {
+            cout << "\nNo orders to display.\n";
+            return;
+        }
+        cout << "\n------ Order List ------\n";
+        cout << left << setw(6) << "ID" << setw(20) << "Customer"
+             << setw(20) << "Item" << setw(8) << "Qty"
+             << setw(10) << "Total" << "Time" << endl;
+        cout << string(70, '-') << endl;
+        
+        OrderNode* current = ordersHead;
+        while (current) {
+            const Order& o = current->order;
+            cout << left << setw(6) << o.id
+                 << setw(20) << o.customer
+                 << setw(20) << o.item
+                 << setw(8) << o.quantity
+                 << setw(10) << fixed << setprecision(2) << o.total
+                 << o.timestamp << endl;
+            current = current->next;
+        }
+    }
+
+    void updateOrderById() {
+        int id;
+        cout << "Enter Order ID to update: ";
+        cin >> id;
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        
+        OrderNode* current = ordersHead;
+        while (current) {
+            if (current->order.id == id) {
+                double oldTotal = current->order.total;
+                string qty;
+                while (true) {
+                    cout << "Current quantity: " << current->order.quantity 
+                         << ". Enter new quantity: ";
+                    getline(cin, qty);
+                    if (isValidQuantity(qty)) {
+                        current->order.quantity = stoi(qty);
+                        break;
+                    }
+                    cout << "Invalid quantity. Use digits only.\n";
+                }
+                for (const auto& item : menu) {
+                    if (item.second.first == current->order.item) {
+                        current->order.total = item.second.second * current->order.quantity;
+                        break;
+                    }
+                }
+                double diff = current->order.total - oldTotal;
+                saveToFile(); // Save updated order immediately
+                cout << "Order " << id << " updated. New total: "
+                     << fixed << setprecision(2) << current->order.total << " birr.\n";
+                if (diff > 0) {
+                    cout << "Price increased by: " << fixed << setprecision(2) << diff << " birr.\n";
+                } else if (diff < 0) {
+                    cout << "Price decreased by: " << fixed << setprecision(2) << -diff << " birr.\n";
+                } else {
+                    cout << "Price remains the same.\n";
+                }
+                return;
+            }
+            current = current->next;
+        }
+        cout << "Order ID not found.\n";
+    } 
      void deleteOrderById() {
         int id;
         cout << "Enter Order ID to delete: ";
