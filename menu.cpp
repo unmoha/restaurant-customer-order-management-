@@ -234,6 +234,141 @@ private:
         return a.timestamp < b.timestamp;
     }
 
+    public:
+    OrderManager() : nextId(1001), ordersHead(nullptr), feedbacksHead(nullptr) {
+        // Initialize menu from file
+        loadMenu();
+
+        ofstream create(fileName, ios::app);
+        create.close();
+        loadFromFile();
+        
+        // Load feedbacks
+        ifstream fbCreate(feedbackFileName, ios::app);
+        fbCreate.close();
+        loadFeedbacks();
+
+        // Load password
+        loadPassword();
+    }
+
+    ~OrderManager() {
+        // Cleanup orders
+        OrderNode* currOrder = ordersHead;
+        while (currOrder) {
+            OrderNode* temp = currOrder;
+            currOrder = currOrder->next;
+            delete temp;
+        }
+        
+        // Cleanup feedbacks
+        FeedbackNode* currFeedback = feedbacksHead;
+        while (currFeedback) {
+            FeedbackNode* temp = currFeedback;
+            currFeedback = currFeedback->next;
+            delete temp;
+        }
+    }
+
+    void changePassword() {
+        string oldPass, newPass;
+        cout << "Enter current password: ";
+        getline(cin, oldPass);
+        
+        if (oldPass != cashierPassword) {
+            cout << "Incorrect current password.\n";
+            return;
+        }
+        
+        cout << "Enter new password: ";
+        getline(cin, newPass);
+        
+        if (newPass.empty()) {
+            cout << "Password cannot be empty.\n";
+            return;
+        }
+        
+        cashierPassword = newPass;
+        savePassword();
+        cout << "Password changed successfully.\n";
+    }
+
+    bool verifyPassword(const string& input) const {
+        return input == cashierPassword;
+    }
+
+    void displayMenu() const {
+        cout << "\n----- SPECIAL MENU -----\n";
+        for (const auto& kv : menu) {
+            cout << kv.first << ". " << left << setw(15) << kv.second.first
+                 << ": " << fixed << setprecision(2) << kv.second.second << " birr" << endl;
+        }
+        cout << "------------------------\n";
+    }
+
+    void updateMenu() {
+        int option;
+        cout << "\n1. Update Existing Item\n2. Add New Item\nChoose: ";
+        cin >> option;
+        cin.ignore();
+
+        if (option == 1) {
+            int id;
+            cout << "Enter item ID to update: ";
+            cin >> id;
+            cin.ignore();
+            if (!menu.count(id)) {
+                cout << "Item ID not found.\n";
+                return;
+            }
+            cout << "Update:\n1. Name only\n2. Price only\n3. Both\nChoose: ";
+            int changeOption;
+            cin >> changeOption;
+            cin.ignore();
+
+            if (changeOption == 1) {
+                string newName;
+                cout << "Enter new name: ";
+                getline(cin, newName);
+                menu[id].first = newName;
+                cout << "Item name updated.\n";
+            } else if (changeOption == 2) {
+                double newPrice;
+                cout << "Enter new price: ";
+                cin >> newPrice;
+                cin.ignore();
+                menu[id].second = newPrice;
+                cout << "Item price updated.\n";
+            } else if (changeOption == 3) {
+                string newName;
+                double newPrice;
+                cout << "Enter new name: ";
+                getline(cin, newName);
+                cout << "Enter new price: ";
+                cin >> newPrice;
+                cin.ignore();
+                menu[id] = {newName, newPrice};
+                cout << "Item name and price updated.\n";
+            } else {
+                cout << "Invalid option.\n";
+            }
+        } else if (option == 2) {
+            int newId = menu.rbegin()->first + 1;
+            string name;
+            double price;
+            cout << "Enter item name: ";
+            getline(cin, name);
+            cout << "Enter price: ";
+            cin >> price;
+            cin.ignore();
+            menu[newId] = {name, price};
+            cout << "New menu item added.\n";
+        } else {
+            cout << "Invalid option.\n";
+        }
+        saveMenu(); // Save menu changes to file
+    }
+
 void showMainMenu() {
     cout << "\n===== Selam Ethiopian Restaurant =====\n";
     cout << "1. Create Order\n";
