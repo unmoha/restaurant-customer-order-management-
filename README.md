@@ -1,5 +1,12 @@
 Restaurant Order Management System
+
+
+
+
 Overview
+
+
+
 This C++ program is a comprehensive Restaurant Order Management System designed for a small to medium-sized restaurant. It provides three distinct user roles with different functionalities:
 
 Customer: Can place orders, search/update/delete their orders, and submit feedback
@@ -11,7 +18,10 @@ Chef: Can view customer feedbacks and monitor orders
 The system features file-based data persistence, password protection for staff roles, and various order management functionalities.
 
 Features
+
+
 Core Functionalities
+
 Order Management:
 
 Create new orders with customer details
