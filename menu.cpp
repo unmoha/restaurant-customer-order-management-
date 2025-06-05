@@ -7,13 +7,44 @@
 #include <algorithm>
 #include <ctime>
 #include <cctype>
+#include <termios.h>
+#include <unistd.h>
 using namespace std;
+
+const int MAX_ORDERS = 60;
+
+string getPassword() {
+    termios oldt;
+    tcgetattr(STDIN_FILENO, &oldt);
+    termios newt = oldt;
+    newt.c_lflag &= ~ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+
+    string password;
+    char ch;
+    while (read(STDIN_FILENO, &ch, 1) && ch != '\n') {
+        if (ch == 127 || ch == 8) { // Handle backspace
+            if (!password.empty()) {
+                password.pop_back();
+                cout << "\b \b"; // Move cursor back, erase character, move back again
+            }
+        } else {
+            password.push_back(ch);
+            cout << '*';
+        }
+    }
+    
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+    cout << endl;
+    return password;
+}
 
 struct Order {
     int id;
     string customer;
     string item;
-    int quantity;
+    string category;
+    double quantity;
     double total;
     string timestamp;
 };
@@ -24,7 +55,6 @@ struct Feedback {
     string timestamp;
 };
 
-// Node structures for linked lists
 struct OrderNode {
     Order order;
     OrderNode* next;
@@ -39,13 +69,16 @@ class OrderManager {
 private:
     OrderNode* ordersHead;
     FeedbackNode* feedbacksHead;
-    map<int, pair<string,double>> menu;
+    map<int, pair<string, pair<string, double>>> menu;
     int nextId;
+    int orderCount;
     const string fileName = "orders.txt";
     const string feedbackFileName = "feedbacks.txt";
     const string passwordFile = "password.txt";
-    const string menuFile = "menu.txt";  // New menu file
+    const string chefPasswordFile = "chef_password.txt";
+    const string menuFile = "menu.txt";
     string cashierPassword;
+    string chefPassword;
 
     string currentTime() const {
         time_t t = time(nullptr);
@@ -55,13 +88,21 @@ private:
         return string(buf);
     }
     
-    void loadPassword() {
+    void loadPasswords() {
         ifstream fin(passwordFile);
         if (fin) {
             getline(fin, cashierPassword);
         } else {
-            cashierPassword = "123"; // default password
+            cashierPassword = "123";
             savePassword();
+        }
+
+        ifstream chefFin(chefPasswordFile);
+        if (chefFin) {
+            getline(chefFin, chefPassword);
+        } else {
+            chefPassword = "123";
+            saveChefPassword();
         }
     }
 
@@ -70,37 +111,43 @@ private:
         fout << cashierPassword;
     }
 
-    void loadMenu() {  // New function to load menu
+    void saveChefPassword() const {
+        ofstream fout(chefPasswordFile);
+        fout << chefPassword;
+    }
+
+    void loadMenu() {
         ifstream min(menuFile);
         if (min) {
             string line;
             while (getline(min, line)) {
                 if (line.empty()) continue;
                 stringstream ss(line);
-                string idStr, name, priceStr;
+                string idStr, name, category, priceStr;
                 getline(ss, idStr, ',');
                 getline(ss, name, ',');
+                getline(ss, category, ',');
                 getline(ss, priceStr);
                 int id = stoi(idStr);
                 double price = stod(priceStr);
-                menu[id] = {name, price};
+                menu[id] = {name, {category, price}};
             }
         } else {
-            // Default menu if file doesn't exist
-            menu[1] = {"TIBS", 500.0};
-            menu[2] = {"KITFO", 600.0};
-            menu[3] = {"DORO WOTIE", 1050.0};
-            menu[4] = {"KUANTA FERFER", 650.0};
-            menu[5] = {"ALCHA KEKLE", 530.0};
-            saveMenu();  // Save default menu
+            menu[1] = {"TIBS", {"food", 500.0}};
+            menu[2] = {"KITFO", {"food", 600.0}};
+            menu[3] = {"DORO WOTIE", {"food", 1050.0}};
+            menu[4] = {"MINERAL WATER", {"drink", 30.0}};
+            menu[5] = {"BEER", {"drink", 120.0}};
+            saveMenu();
         }
     }
 
-    void saveMenu() const {  // New function to save menu
+    void saveMenu() const {
         ofstream mout(menuFile);
         for (const auto& item : menu) {
             mout << item.first << ',' << item.second.first << ',' 
-                 << fixed << setprecision(2) << item.second.second << '\n';
+                 << item.second.second.first << ',' << fixed << setprecision(2) 
+                 << item.second.second.second << '\n';
         }
     }
 
@@ -108,7 +155,7 @@ private:
         ifstream fin(fileName);
         if (!fin) return;
         string line;
-        getline(fin, line); // Skip header
+        getline(fin, line);
         int maxId = 1000;
         OrderNode* last = nullptr;
         
@@ -119,7 +166,8 @@ private:
             getline(ss, line, ','); o.id = stoi(line);
             getline(ss, o.customer, ',');
             getline(ss, o.item, ',');
-            getline(ss, line, ','); o.quantity = stoi(line);
+            getline(ss, o.category, ',');
+            getline(ss, line, ','); o.quantity = stod(line);
             getline(ss, line, ','); o.total = stod(line);
             getline(ss, o.timestamp);
             
@@ -132,19 +180,20 @@ private:
                 last = newNode;
             }
             maxId = max(maxId, o.id);
+            orderCount++;
         }
         nextId = maxId + 1;
     }
 
     void saveToFile() const {
         ofstream fout(fileName);
-        fout << "ID,Customer,Item,Quantity,Total,Time\n";
+        fout << "ID,Customer,Item,Category,Quantity,Total,Time\n";
         OrderNode* current = ordersHead;
         while (current) {
             const Order& o = current->order;
             fout << o.id << "," << o.customer << "," << o.item << ","
-                 << o.quantity << "," << fixed << setprecision(2) << o.total
-                 << "," << o.timestamp << "\n";
+                 << o.category << "," << fixed << setprecision(2) << o.quantity << ","
+                 << o.total << "," << o.timestamp << "\n";
             current = current->next;
         }
     }
@@ -154,13 +203,6 @@ private:
             if (!isalpha(c) && c != ' ') return false;
         }
         return !name.empty();
-    }
-
-    bool isValidQuantity(const string& input) const {
-        for (char c : input) {
-            if (!isdigit(c)) return false;
-        }
-        return !input.empty();
     }
 
     void loadFeedbacks() {
@@ -193,11 +235,9 @@ private:
         fout << fb.orderId << ';' << fb.timestamp << ';' << fb.message << '\n';
     }
 
-    // Merge Sort for linked list
     OrderNode* mergeSort(OrderNode* head, bool (*cmp)(const Order&, const Order&)) {
         if (!head || !head->next) return head;
         
-        // Split list
         OrderNode* slow = head;
         OrderNode* fast = head->next;
         while (fast && fast->next) {
@@ -207,11 +247,9 @@ private:
         OrderNode* mid = slow->next;
         slow->next = nullptr;
         
-        // Recursively sort
         OrderNode* left = mergeSort(head, cmp);
         OrderNode* right = mergeSort(mid, cmp);
         
-        // Merge sorted lists
         OrderNode dummy;
         OrderNode* tail = &dummy;
         
@@ -234,26 +272,22 @@ private:
         return a.timestamp < b.timestamp;
     }
 
-    public:
-    OrderManager() : nextId(1001), ordersHead(nullptr), feedbacksHead(nullptr) {
-        // Initialize menu from file
+public:
+    OrderManager() : nextId(1001), ordersHead(nullptr), feedbacksHead(nullptr), orderCount(0) {
         loadMenu();
 
         ofstream create(fileName, ios::app);
         create.close();
         loadFromFile();
         
-        // Load feedbacks
         ifstream fbCreate(feedbackFileName, ios::app);
         fbCreate.close();
         loadFeedbacks();
 
-        // Load password
-        loadPassword();
+        loadPasswords();
     }
 
     ~OrderManager() {
-        // Cleanup orders
         OrderNode* currOrder = ordersHead;
         while (currOrder) {
             OrderNode* temp = currOrder;
@@ -261,7 +295,6 @@ private:
             delete temp;
         }
         
-        // Cleanup feedbacks
         FeedbackNode* currFeedback = feedbacksHead;
         while (currFeedback) {
             FeedbackNode* temp = currFeedback;
@@ -270,38 +303,69 @@ private:
         }
     }
 
-    void changePassword() {
-        string oldPass, newPass;
-        cout << "Enter current password: ";
-        getline(cin, oldPass);
-        
-        if (oldPass != cashierPassword) {
-            cout << "Incorrect current password.\n";
-            return;
+    void changePassword(bool isCashier = true) {
+        if (isCashier) {
+            cout << "Enter current password: ";
+            string oldPass = getPassword();
+            
+            if (oldPass != cashierPassword) {
+                cout << "\nIncorrect current password.\n";
+                return;
+            }
+            
+            cout << "\nEnter new password: ";
+            string newPass = getPassword();
+            
+            if (newPass.empty()) {
+                cout << "\nPassword cannot be empty.\n";
+                return;
+            }
+            
+            cashierPassword = newPass;
+            savePassword();
+            cout << "\nCashier password changed successfully.\n";
+        } else {
+            cout << "Enter current chef password: ";
+            string oldPass = getPassword();
+            
+            if (oldPass != chefPassword) {
+                cout << "\nIncorrect current password.\n";
+                return;
+            }
+            
+            cout << "\nEnter new chef password: ";
+            string newPass = getPassword();
+            
+            if (newPass.empty()) {
+                cout << "\nPassword cannot be empty.\n";
+                return;
+            }
+            
+            chefPassword = newPass;
+            saveChefPassword();
+            cout << "\nChef password changed successfully.\n";
         }
-        
-        cout << "Enter new password: ";
-        getline(cin, newPass);
-        
-        if (newPass.empty()) {
-            cout << "Password cannot be empty.\n";
-            return;
-        }
-        
-        cashierPassword = newPass;
-        savePassword();
-        cout << "Password changed successfully.\n";
     }
 
-    bool verifyPassword(const string& input) const {
-        return input == cashierPassword;
+    bool verifyPassword(const string& input, bool isCashier = true) const {
+        return isCashier ? (input == cashierPassword) : (input == chefPassword);
     }
 
     void displayMenu() const {
-        cout << "\n----- SPECIAL MENU -----\n";
+        cout << "\n----- FOOD MENU -----\n";
         for (const auto& kv : menu) {
-            cout << kv.first << ". " << left << setw(15) << kv.second.first
-                 << ": " << fixed << setprecision(2) << kv.second.second << " birr" << endl;
+            if (kv.second.second.first == "food") {
+                cout << kv.first << ". " << left << setw(20) << kv.second.first
+                     << ": " << fixed << setprecision(2) << kv.second.second.second << " birr" << endl;
+            }
+        }
+        
+        cout << "\n----- DRINK MENU -----\n";
+        for (const auto& kv : menu) {
+            if (kv.second.second.first == "drink") {
+                cout << kv.first << ". " << left << setw(20) << kv.second.first
+                     << ": " << fixed << setprecision(2) << kv.second.second.second << " birr" << endl;
+            }
         }
         cout << "------------------------\n";
     }
@@ -337,7 +401,7 @@ private:
                 cout << "Enter new price: ";
                 cin >> newPrice;
                 cin.ignore();
-                menu[id].second = newPrice;
+                menu[id].second.second = newPrice;
                 cout << "Item price updated.\n";
             } else if (changeOption == 3) {
                 string newName;
@@ -347,34 +411,46 @@ private:
                 cout << "Enter new price: ";
                 cin >> newPrice;
                 cin.ignore();
-                menu[id] = {newName, newPrice};
+                menu[id] = {newName, {menu[id].second.first, newPrice}};
                 cout << "Item name and price updated.\n";
             } else {
                 cout << "Invalid option.\n";
             }
         } else if (option == 2) {
             int newId = menu.rbegin()->first + 1;
-            string name;
+            string name, category;
             double price;
+            
             cout << "Enter item name: ";
             getline(cin, name);
+            
+            cout << "Enter category (food/drink): ";
+            getline(cin, category);
+            
             cout << "Enter price: ";
             cin >> price;
             cin.ignore();
-            menu[newId] = {name, price};
+            
+            menu[newId] = {name, {category, price}};
             cout << "New menu item added.\n";
         } else {
             cout << "Invalid option.\n";
         }
-        saveMenu(); // Save menu changes to file
+        saveMenu();
     }
-     void createOrder() {
+    
+    void createOrder() {
+        if (orderCount >= MAX_ORDERS) {
+            cout << "Maximum order limit (60) reached!\n";
+            return;
+        }
+        
         displayMenu();
         cout << "0. Cancel" << endl;
         int choice;
         cout << "Enter menu number: ";
         cin >> choice;
-        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        cin.ignore();
         if (choice == 0) return;
         if (!menu.count(choice)) {
             cout << "Invalid selection.\n";
@@ -390,22 +466,33 @@ private:
             cout << "Invalid name. Use letters and spaces only.\n";
         }
 
-        string qty;
-        while (true) {
-            cout << "Enter quantity: ";
-            getline(cin, qty);
-            if (isValidQuantity(qty)) {
-                o.quantity = stoi(qty);
-                break;
+        o.category = menu.at(choice).second.first;
+        o.item = menu.at(choice).first;
+        
+        if (o.category == "drink") {
+            cout << "Enter liters: ";
+            cin >> o.quantity;
+            cin.ignore();
+        } else {
+            string qty;
+            while (true) {
+                cout << "Enter quantity: ";
+                getline(cin, qty);
+                bool valid = true;
+                for (char c : qty) {
+                    if (!isdigit(c)) valid = false;
+                }
+                if (valid && !qty.empty()) {
+                    o.quantity = stod(qty);
+                    break;
+                }
+                cout << "Invalid quantity. Use digits only.\n";
             }
-            cout << "Invalid quantity. Use digits only.\n";
         }
 
-        o.total = menu.at(choice).second * o.quantity;
-        o.item = menu.at(choice).first;
+        o.total = menu.at(choice).second.second * o.quantity;
         o.timestamp = currentTime();
 
-        // Add to linked list
         OrderNode* newNode = new OrderNode{o, nullptr};
         if (!ordersHead) {
             ordersHead = newNode;
@@ -417,7 +504,8 @@ private:
             current->next = newNode;
         }
         
-        saveToFile(); // Save new order immediately
+        orderCount++;
+        saveToFile();
         cout << "Order ID " << o.id << " created at " << o.timestamp << ". Total: "
              << fixed << setprecision(2) << o.total << " birr.\n";
     }
@@ -439,8 +527,8 @@ private:
             cout << left << setw(6) << o.id
                  << setw(20) << o.customer
                  << setw(20) << o.item
-                 << setw(8) << o.quantity
-                 << setw(10) << fixed << setprecision(2) << o.total
+                 << setw(8) << fixed << setprecision(2) << o.quantity
+                 << setw(10) << o.total
                  << o.timestamp << endl;
             current = current->next;
         }
@@ -450,39 +538,48 @@ private:
         int id;
         cout << "Enter Order ID to update: ";
         cin >> id;
-        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        cin.ignore();
         
         OrderNode* current = ordersHead;
         while (current) {
             if (current->order.id == id) {
                 double oldTotal = current->order.total;
-                string qty;
-                while (true) {
-                    cout << "Current quantity: " << current->order.quantity 
-                         << ". Enter new quantity: ";
-                    getline(cin, qty);
-                    if (isValidQuantity(qty)) {
-                        current->order.quantity = stoi(qty);
-                        break;
+                
+                if (current->order.category == "drink") {
+                    cout << "Enter new liters: ";
+                    cin >> current->order.quantity;
+                    cin.ignore();
+                } else {
+                    string qty;
+                    while (true) {
+                        cout << "Enter new quantity: ";
+                        getline(cin, qty);
+                        bool valid = true;
+                        for (char c : qty) {
+                            if (!isdigit(c)) valid = false;
+                        }
+                        if (valid && !qty.empty()) {
+                            current->order.quantity = stod(qty);
+                            break;
+                        }
+                        cout << "Invalid quantity. Use digits only.\n";
                     }
-                    cout << "Invalid quantity. Use digits only.\n";
                 }
+                
                 for (const auto& item : menu) {
                     if (item.second.first == current->order.item) {
-                        current->order.total = item.second.second * current->order.quantity;
+                        current->order.total = item.second.second.second * current->order.quantity;
                         break;
                     }
                 }
+                
                 double diff = current->order.total - oldTotal;
-                saveToFile(); // Save updated order immediately
+                saveToFile();
                 cout << "Order " << id << " updated. New total: "
                      << fixed << setprecision(2) << current->order.total << " birr.\n";
-                if (diff > 0) {
-                    cout << "Price increased by: " << fixed << setprecision(2) << diff << " birr.\n";
-                } else if (diff < 0) {
-                    cout << "Price decreased by: " << fixed << setprecision(2) << -diff << " birr.\n";
-                } else {
-                    cout << "Price remains the same.\n";
+                if (diff != 0) {
+                    cout << "Price changed by: " << fixed << setprecision(2) << abs(diff) 
+                         << " birr (" << (diff > 0 ? "+" : "") << diff << ")\n";
                 }
                 return;
             }
@@ -490,11 +587,12 @@ private:
         }
         cout << "Order ID not found.\n";
     } 
-     void deleteOrderById() {
+    
+    void deleteOrderById() {
         int id;
         cout << "Enter Order ID to delete: ";
         cin >> id;
-        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        cin.ignore();
         
         OrderNode* current = ordersHead;
         while (current) {
@@ -502,7 +600,8 @@ private:
                 current->order.item = "[DELETED]";
                 current->order.quantity = 0;
                 current->order.total = 0.0;
-                saveToFile(); // Save deletion immediately
+                saveToFile();
+                orderCount--;
                 cout << "Order " << id << " marked as deleted.\n";
                 return;
             }
@@ -515,7 +614,7 @@ private:
         int id;
         cout << "Enter Order ID to search: ";
         cin >> id;
-        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        cin.ignore();
         
         OrderNode* current = ordersHead;
         while (current) {
@@ -536,7 +635,7 @@ private:
         ordersHead = mergeSort(ordersHead, compareByTime);
         cout << "Orders sorted by time.\n";
         listOrders();
-        saveToFile(); // Save sorted orders immediately
+        saveToFile();
     }
 
     void generateDailyReport() const {
@@ -571,25 +670,26 @@ private:
             
             for (const auto& item : itemQuantities) {
                 cout << left << setw(20) << item.first 
-                     << setw(10) << item.second 
-                     << setw(15) << fixed << setprecision(2) << itemRevenues[item.first] << endl;
+                     << setw(10) << fixed << setprecision(2) << item.second 
+                     << setw(15) << itemRevenues[item.first] << endl;
             }
         } else {
             cout << "No sales today.\n";
         }
         cout << "===============================\n";
     }
-   void submitFeedback() {
+    
+    void submitFeedback() {
         int orderId;
         cout << "Enter your Order ID: ";
         cin >> orderId;
-        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        cin.ignore();
 
         bool orderExists = false;
         OrderNode* current = ordersHead;
         while (current) {
             if (current->order.id == orderId && current->order.item != "[DELETED]") {
-                orderExists = true
+                orderExists = true;
                 break;
             }
             current = current->next;
@@ -614,7 +714,6 @@ private:
         fb.message = message;
         fb.timestamp = currentTime();
 
-        // Add to feedbacks linked list
         FeedbackNode* newNode = new FeedbackNode{fb, nullptr};
         if (!feedbacksHead) {
             feedbacksHead = newNode;
@@ -626,7 +725,7 @@ private:
             currentFB->next = newNode;
         }
         
-        saveFeedback(fb); // Save feedback to file
+        saveFeedback(fb);
         cout << "Thank you for your feedback!\n";
     }
 
@@ -656,10 +755,10 @@ private:
             cout << "** Most Popular Food: (No orders yet) **\n";
             return;
         }
-        map<string, int> itemCount;
+        map<string, double> itemCount;
         OrderNode* current = ordersHead;
         while (current) {
-            if (current->order.item != "[DELETED]") {
+            if (current->order.item != "[DELETED]" && current->order.category == "food") {
                 itemCount[current->order.item] += current->order.quantity;
             }
             current = current->next;
@@ -669,15 +768,15 @@ private:
             return;
         }
         auto best = max_element(itemCount.begin(), itemCount.end(),
-                [](const pair<string, int>& a, const pair<string, int>& b) {
+                [](const pair<string, double>& a, const pair<string, double>& b) {
                     return a.second < b.second;
                 });
-        cout << "** Most Popular Food: " << best->first << " (Ordered " << best->second << " times) **\n";
+        cout << "** Most Popular Food: " << best->first << " (Sold " << best->second << " units) **\n";
     }
 }; 
 
-void showMainMenu() {
-    cout << "\n===== Selam Ethiopian Restaurant =====\n";
+void showCashierMenu() {
+    cout << "\n===== Cashier Menu =====\n";
     cout << "1. Create Order\n";
     cout << "2. List Orders\n";
     cout << "3. Update Order\n";
@@ -686,76 +785,110 @@ void showMainMenu() {
     cout << "6. Sort Orders\n";
     cout << "7. Update Menu\n";
     cout << "8. Daily Sales Report\n";
-    cout << "9. View Feedbacks\n";
-    cout << "10. Change Password\n";
+    cout << "9. Change Password\n";
     cout << "0. Exit\n";
+    cout << "Choose: ";
+}
+
+void showCustomerMenu() {
+    cout << "\n=== Customer Menu ===\n";
+    cout << "1. Create Order\n";
+    cout << "2. Search Order by ID\n";
+    cout << "3. Update Order by ID\n";
+    cout << "4. Delete Order by ID\n";
+    cout << "5. Submit Feedback\n";
+    cout << "0. Back\n";
+    cout << "Choose: ";
+}
+
+void showChefMenu() {
+    cout << "\n=== Chef Menu ===\n";
+    cout << "1. View Feedbacks\n";
+    cout << "2. List Orders\n";
+    cout << "3. Change Password\n";
+    cout << "0. Back\n";
     cout << "Choose: ";
 }
 
 int main() {
     OrderManager sharedOM;
     while (true) {
-        cout << "Select role:\n1. Customer\n2. Cashier\n0. Exit\nChoice: ";
+        cout << "Select role:\n1. Customer\n2. Cashier\n3. Chef\n0. Exit\nChoice: ";
         int role;
         cin >> role;
-        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        cin.ignore();
 
         if (role == 0) break;
         if (role == 1) {
             while (true) {
-                cout << "\n=== Customer Menu ===\n";
                 sharedOM.displayFamousFood();
-                cout << "1. Create Order\n";
-                cout << "2. Search Order by ID\n";
-                cout << "3. Update Order by ID\n";
-                cout << "4. Delete Order by ID\n";
-                cout << "5. Submit Feedback\n";
-                cout << "0. Back\n";
-                cout << "Choose: ";
+                showCustomerMenu();
                 int c;
                 cin >> c;
-                cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                cin.ignore();
                 if (c == 0) break;
-                else if (c == 1) sharedOM.createOrder();
-                else if (c == 2) sharedOM.searchOrder();
-                else if (c == 3) sharedOM.updateOrderById();
-                else if (c == 4) sharedOM.deleteOrderById();
-                else if (c == 5) sharedOM.submitFeedback();
-                else cout << "Invalid choice.\n";
+                switch(c) {
+                    case 1: sharedOM.createOrder(); break;
+                    case 2: sharedOM.searchOrder(); break;
+                    case 3: sharedOM.updateOrderById(); break;
+                    case 4: sharedOM.deleteOrderById(); break;
+                    case 5: sharedOM.submitFeedback(); break;
+                    default: cout << "Invalid choice.\n";
+                }
             }
-        } else if (role == 2) {
-            string pwd;
-            cout << "Enter password: ";
-            getline(cin, pwd);
+        } 
+        else if (role == 2) {
+            cout << "Enter cashier password: ";
+            string pwd = getPassword();
             if (!sharedOM.verifyPassword(pwd)) {
-                cout << "Wrong password.\n";
+                cout << "\nWrong password.\n";
                 continue;
             }
             while (true) {
                 sharedOM.displayFamousFood();
-                showMainMenu();
+                showCashierMenu();
                 int choice;
                 cin >> choice;
-                cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                cin.ignore();
+                if (choice == 0) break;
                 switch (choice) {
-                    case 0: cout << "Returning to role selection...\n"; goto role_menu;
                     case 1: sharedOM.createOrder(); break;
-                    case 2: sharedOM.listOrders();  break;
+                    case 2: sharedOM.listOrders(); break;
                     case 3: sharedOM.updateOrderById(); break;
                     case 4: sharedOM.deleteOrderById(); break;
                     case 5: sharedOM.searchOrder(); break;
-                    case 6: sharedOM.sortOrders();  break;
-                    case 7: sharedOM.updateMenu();   break;
+                    case 6: sharedOM.sortOrders(); break;
+                    case 7: sharedOM.updateMenu(); break;
                     case 8: sharedOM.generateDailyReport(); break;
-                    case 9: sharedOM.viewFeedbacks(); break;
-                    case 10: sharedOM.changePassword(); break;
+                    case 9: sharedOM.changePassword(); break;
                     default: cout << "Invalid choice.\n";
                 }
             }
-        } else {
+        }
+        else if (role == 3) {
+            cout << "Enter chef password: ";
+            string pwd = getPassword();
+            if (!sharedOM.verifyPassword(pwd, false)) {
+                cout << "\nWrong password.\n";
+                continue;
+            }
+            while (true) {
+                showChefMenu();
+                int choice;
+                cin >> choice;
+                cin.ignore();
+                if (choice == 0) break;
+                switch (choice) {
+                    case 1: sharedOM.viewFeedbacks(); break;
+                    case 2: sharedOM.listOrders(); break;
+                    case 3: sharedOM.changePassword(false); break;
+                    default: cout << "Invalid choice.\n";
+                }
+            }
+        }
+        else {
             cout << "Invalid role selected.\n";
         }
-role_menu:;
     }
     cout << "Goodbye!\n";
     return 0;
