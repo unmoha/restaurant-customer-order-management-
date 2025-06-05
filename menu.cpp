@@ -483,7 +483,13 @@ public:
                     if (!isdigit(c)) valid = false;
                 }
                 if (valid && !qty.empty()) {
-                    o.quantity = stod(qty);
+                    int quantity = stoi(qty);
+                    // ADDED: Validate food quantity doesn't exceed 60
+                    if (quantity > 60) {
+                        cout << "Cannot order more than 60 food items. Please enter a smaller quantity.\n";
+                        continue;
+                    }
+                    o.quantity = quantity;
                     break;
                 }
                 cout << "Invalid quantity. Use digits only.\n";
@@ -559,7 +565,13 @@ public:
                             if (!isdigit(c)) valid = false;
                         }
                         if (valid && !qty.empty()) {
-                            current->order.quantity = stod(qty);
+                            int quantity = stoi(qty);
+                            // ADDED: Validate food quantity doesn't exceed 60
+                            if (quantity > 60) {
+                                cout << "Cannot order more than 60 food items. Please enter a smaller quantity.\n";
+                                continue;
+                            }
+                            current->order.quantity = quantity;
                             break;
                         }
                         cout << "Invalid quantity. Use digits only.\n";
